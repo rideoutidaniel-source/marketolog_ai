@@ -22,56 +22,16 @@ from dotenv import load_dotenv
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
 
+import ai  # после load_dotenv, чтобы подхватить ключ
+
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))  # куда приходят заявки
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-AI_MODEL = os.getenv("AI_MODEL", "claude-sonnet-5-5")
 
 DATA = json.loads((Path(__file__).parent / "catalog.json").read_text(encoding="utf-8"))
 SHOP = DATA["shop"]
 CATEGORIES = DATA["categories"]
 
 router = Router()
-
-# ---------- AI-консультант (необязательно) ----------
-ai_client = None
-if ANTHROPIC_API_KEY:
-    from anthropic import AsyncAnthropic
-
-    ai_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
-
-
-def build_system_prompt() -> str:
-    lines = []
-    for c in CATEGORIES:
-        for it in c["items"]:
-            lines.append(f"- [{c['title']}] {it['name']}: {it['price']} {SHOP['currency']}. {it['desc']}")
-    return (
-        f"Ты — вежливый консультант мебельного магазина «{SHOP['name']}» в Telegram. "
-        "Помогай подобрать мебель по комнате, размеру, стилю и бюджету. "
-        "Рекомендуй ТОЛЬКО товары из каталога ниже и называй их цены. "
-        "Если нужного товара нет — честно скажи об этом и предложи оставить заявку менеджеру. "
-        "Отвечай на языке клиента, коротко (до 6 предложений), без выдуманных характеристик.\n\n"
-        f"Доставка: {SHOP['delivery']}\nОплата: {SHOP['payment']}\nГарантия: {SHOP['warranty']}\n\n"
-        "Каталог:\n" + "\n".join(lines)
-    )
-
-
-SYSTEM_PROMPT = build_system_prompt()
-history: dict[int, list[dict]] = {}
-
-
-async def ask_ai(user_id: int, text: str) -> str:
-    msgs = history.setdefault(user_id, [])
-    msgs.append({"role": "user", "content": text})
-    del msgs[:-10]  # помним последние 10 сообщений
-    resp = await ai_client.messages.create(
-        model=AI_MODEL, max_tokens=600, system=SYSTEM_PROMPT, messages=msgs
-    )
-    answer = resp.content[0].text
-    msgs.append({"role": "assistant", "content": answer})
-    return answer
-
 
 # ---------- Клавиатуры ----------
 def main_menu():
@@ -250,21 +210,43 @@ async def order_done(message: Message, state: FSMContext, bot: Bot):
                          reply_markup=main_menu())
 
 
-# ---------- Свободный текст -> AI ----------
-@router.message(F.text)
-async def free_text(message: Message):
-    if not ai_client:
+# ---------- Свободный текст и фото -> AI ----------
+AI_FAIL = "Сейчас не получается ответить. Попробуйте меню или оставьте заявку."
+
+
+async def _answer_ai(message: Message, text: str, image_b64: str | None = None):
+    if not ai.enabled:
         await message.answer("Выберите действие в меню:", reply_markup=main_menu())
         return
     await message.bot.send_chat_action(message.chat.id, "typing")
     try:
-        answer = await ask_ai(message.from_user.id, message.text)
+        answer = await ai.ask(message, SHOP, text, image_b64)
     except Exception:
         logging.exception("AI error")
-        await message.answer("Сейчас не получается ответить. Попробуйте меню или оставьте заявку.",
-                             reply_markup=main_menu())
+        await message.answer(AI_FAIL, reply_markup=main_menu())
         return
     await message.answer(answer, reply_markup=main_menu())
+
+
+@router.message(F.photo)
+async def photo_msg(message: Message):
+    if not ai.enabled:
+        await message.answer("Фото получено. Менеджер свяжется с вами, оставьте заявку:", reply_markup=main_menu())
+        return
+    try:
+        file = await message.bot.get_file(message.photo[-1].file_id)
+        data = (await message.bot.download_file(file.file_path)).read()
+        b64 = ai.prepare_image(data)
+    except Exception:
+        logging.exception("photo error")
+        await message.answer("Не удалось открыть фото, пришлите ещё раз.")
+        return
+    await _answer_ai(message, message.caption or "", b64)
+
+
+@router.message(F.text)
+async def free_text(message: Message):
+    await _answer_ai(message, message.text)
 
 
 async def main():
