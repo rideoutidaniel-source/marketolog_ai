@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Калькулятор кухонь и шкафов</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: одна колонка, выбор типа → материал → размеры → итог крупным шрифтом */
+:root {
+  --bg: #f2f4f3;
+  --surface: #ffffff;
+  --fg: #17211f;
+  --muted: #5d6b68;
+  --line: #d7dedc;
+  --accent: #1d5c56;
+  --accent-fg: #ffffff;
+  --accent-soft: #e0eeec;
+  --font-body: "Onest", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101716; --surface: #18221f; --fg: #e8efed; --muted: #9bacaa;
+    --line: #2b3a37; --accent: #5cc2b6; --accent-fg: #0b1513; --accent-soft: #1d3330;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101716; --surface: #18221f; --fg: #e8efed; --muted: #9bacaa;
+  --line: #2b3a37; --accent: #5cc2b6; --accent-fg: #0b1513; --accent-soft: #1d3330;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--font-body); font-size: 16px; line-height: 1.45;
+  padding-block: 20px 32px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+h1 { font-size: 1.5rem; line-height: 1.2; margin: 0; text-wrap: balance; font-weight: 700; }
+.lead { margin: 4px 0 0; color: var(--muted); font-size: .95rem; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.label { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin: 0; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--bg); border-radius: 10px; border: 1px solid var(--line); }
+.seg button { font: inherit; font-weight: 600; padding: 12px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); cursor: pointer; min-height: 48px; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); }
+.mats { display: flex; flex-direction: column; gap: 8px; }
+.mat { display: flex; justify-content: space-between; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; cursor: pointer; min-height: 52px; }
+.mat[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.mat .n { font-weight: 600; }
+.mat .p { font-family: var(--font-num); font-size: .78rem; color: var(--muted); text-align: right; white-space: nowrap; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label { font-size: .85rem; color: var(--muted); }
+.inp { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding-right: 12px; }
+.inp:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.inp input { flex: 1; min-width: 0; font: inherit; font-family: var(--font-num); font-weight: 600; font-size: 1.1rem; color: var(--fg); background: transparent; border: 0; outline: 0; padding: 12px; }
+.inp span { color: var(--muted); font-size: .9rem; }
+.hint { font-size: .8rem; color: var(--muted); margin: 0; }
+.result { background: var(--accent); color: var(--accent-fg); border-radius: 10px; padding: 18px 16px; display: flex; flex-direction: column; gap: 6px; }
+.result .cap { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 600; opacity: .85; }
+.result .sum { font-family: var(--font-num); font-weight: 600; font-size: clamp(1.3rem, 6.2vw, 1.85rem); line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.result .cur { font-size: .9rem; opacity: .9; }
+.rows { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: .9rem; }
+.rows li { display: flex; justify-content: space-between; gap: 12px; }
+.rows b { font-family: var(--font-num); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
+.incl { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: .92rem; }
+.incl li { padding-left: 22px; position: relative; }
+.incl li::before { content: ""; position: absolute; left: 4px; top: .5em; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.contact { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.phone { font-family: var(--font-num); font-weight: 600; font-size: 1.2rem; user-select: all; }
+.btn { font: inherit; font-weight: 600; border-radius: 8px; padding: 11px 16px; min-height: 46px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border: 0; }
+.btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+button:focus-visible, a:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) { .mat, .seg button { transition: background .15s, border-color .15s; } }
+</style>
+</head>
+<body>
+
+<main class="wrap">
+  <header>
+    <h1>Калькулятор кухонь и шкафов</h1>
+    <p class="lead">Выберите, что хотите заказать, введите размеры и сразу увидите примерную цену.</p>
+  </header>
+
+  <section class="panel" aria-label="Что считаем">
+    <p class="label">Что считаем</p>
+    <div class="seg" role="group" aria-label="Тип мебели">
+      <button type="button" id="mode-kitchen" aria-pressed="true">Кухня</button>
+      <button type="button" id="mode-wardrobe" aria-pressed="false">Шкаф</button>
+    </div>
+    <p class="label">Материал</p>
+    <div class="mats" id="mats"></div>
+  </section>
+
+  <section class="panel" aria-label="Размеры">
+    <p class="label">Размеры</p>
+    <div class="fields" id="fields-kitchen">
+      <div class="field">
+        <label for="k-len">Длина кухни</label>
+        <div class="inp"><input id="k-len" type="text" inputmode="decimal" value="3" autocomplete="off"><span>пог. м</span></div>
+      </div>
+      <div class="field">
+        <label for="k-h">Высота потолка</label>
+        <div class="inp"><input id="k-h" type="text" inputmode="decimal" value="2.8" autocomplete="off"><span>м</span></div>
+      </div>
+    </div>
+    <div class="fields" id="fields-wardrobe" hidden>
+      <div class="field">
+        <label for="w-w">Ширина шкафа</label>
+        <div class="inp"><input id="w-w" type="text" inputmode="decimal" value="2.4" autocomplete="off"><span>м</span></div>
+      </div>
+      <div class="field">
+        <label for="w-h">Высота шкафа</label>
+        <div class="inp"><input id="w-h" type="text" inputmode="decimal" value="2.6" autocomplete="off"><span>м</span></div>
+      </div>
+    </div>
+    <p class="hint" id="hint"></p>
+  </section>
+
+  <section class="result" aria-live="polite" aria-label="Примерная цена">
+    <span class="cap">Примерная цена</span>
+    <span class="sum" id="sum">—</span>
+    <span class="cur">сум, с доставкой и установкой</span>
+  </section>
+
+  <section class="panel" aria-label="Расчёт">
+    <p class="label">Из чего складывается</p>
+    <ul class="rows" id="rows"></ul>
+  </section>
+
+  <section class="panel" aria-label="Что входит">
+    <p class="label">Что входит в цену</p>
+    <ul class="incl">
+      <li>Доставка и установка включены</li>
+      <li>Гарантия 1 год на кромку и механизмы</li>
+      <li>Точную цену назовём после замера</li>
+    </ul>
+    <div class="contact">
+      <span class="phone" id="phone">94 143 39 98</span>
+      <a class="btn primary" href="tel:+998941433998">Позвонить</a>
+      <button class="btn ghost" type="button" id="copy">Скопировать номер</button>
+    </div>
+    <p class="hint" id="copied" hidden>Номер скопирован</p>
+  </section>
+</main>
+
+<script>
+(function () {
+  try { if (window.Telegram && Telegram.WebApp) { Telegram.WebApp.ready(); Telegram.WebApp.expand(); } } catch (e) {}
+  var DATA = {
+    kitchen: {
+      unit: "пог. м",
+      mats: [
+        { id: "ldsp",   name: "ЛДСП",                   min: 2000000, max: 3800000, extra: 100000 },
+        { id: "acr1",   name: "Акрил односторонний",    min: 3000000, max: 4500000, extra: 200000 },
+        { id: "acr2",   name: "Акрил двухсторонний",    min: 4500000, max: 7000000, extra: 400000 },
+        { id: "classic",name: "Классика без камня",     min: 6500000, max: 8000000, extra: 600000 }
+      ]
+    },
+    wardrobe: {
+      unit: "м²",
+      mats: [
+        { id: "wldsp", name: "ЛДСП", min: 750000, max: 950000 },
+        { id: "wmdf",  name: "МДФ",  min: 950000, max: 1150000 }
+      ]
+    }
+  };
+  var BASE_H = 2.8;
+  var mode = "kitchen";
+  var sel = { kitchen: "ldsp", wardrobe: "wldsp" };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var fmt = function (n) { return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " "); };
+  var num = function (el) {
+    var v = parseFloat(String(el.value).replace(",", ".").replace(/\s/g, ""));
+    return isFinite(v) && v > 0 ? v : 0;
+  };
+
+  function renderMats() {
+    var box = $("mats");
+    box.innerHTML = "";
+    DATA[mode].mats.forEach(function (m) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "mat";
+      b.setAttribute("aria-pressed", String(sel[mode] === m.id));
+      b.innerHTML = '<span class="n"></span><span class="p"></span>';
+      b.querySelector(".n").textContent = m.name;
+      b.querySelector(".p").textContent = fmt(m.min / 1000) + " – " + fmt(m.max / 1000) + " тыс. за " + DATA[mode].unit;
+      b.addEventListener("click", function () { sel[mode] = m.id; renderMats(); calc(); });
+      box.appendChild(b);
+    });
+  }
+
+  function row(label, value) {
+    var li = document.createElement("li");
+    var a = document.createElement("span"); a.textContent = label;
+    var b = document.createElement("b"); b.textContent = value;
+    li.appendChild(a); li.appendChild(b);
+    return li;
+  }
+
+  function calc() {
+    var rows = $("rows"); rows.innerHTML = "";
+    var m = DATA[mode].mats.filter(function (x) { return x.id === sel[mode]; })[0];
+    var lo = 0, hi = 0;
+    if (mode === "kitchen") {
+      var len = num($("k-len")), h = num($("k-h"));
+      var steps = h > BASE_H ? Math.round((h - BASE_H) / 0.1) : 0;
+      var addPerM = steps * m.extra;
+      lo = len * (m.min + addPerM);
+      hi = len * (m.max + addPerM);
+      $("hint").textContent = "Базовая высота потолка 2,8 м. За каждые лишние 0,1 м добавляется " + fmt(m.extra) + " сум на погонный метр.";
+      if (len) {
+        rows.appendChild(row("Кухня " + String(len).replace(".", ",") + " пог. м", fmt(len * m.min) + " – " + fmt(len * m.max)));
+        if (steps) rows.appendChild(row("Потолок выше 2,8 м (" + steps + " × 0,1 м)", "+" + fmt(len * addPerM)));
+      }
+    } else {
+      var w = num($("w-w")), hh = num($("w-h"));
+      var area = w * hh;
+      lo = area * m.min;
+      hi = area * m.max;
+      $("hint").textContent = "Площадь считается как ширина × высота. Цена за квадратный метр зависит от наполнения и фурнитуры.";
+      if (area) {
+        rows.appendChild(row("Площадь", area.toFixed(2).replace(".", ",") + " м²"));
+        rows.appendChild(row("Цена за м²", fmt(m.min) + " – " + fmt(m.max)));
+      }
+    }
+    $("sum").textContent = lo ? fmt(lo) + " – " + fmt(hi) : "Введите размеры";
+    if (lo) rows.appendChild(row("Итого", fmt(lo) + " – " + fmt(hi)));
+  }
+
+  function setMode(next) {
+    mode = next;
+    $("mode-kitchen").setAttribute("aria-pressed", String(mode === "kitchen"));
+    $("mode-wardrobe").setAttribute("aria-pressed", String(mode === "wardrobe"));
+    $("fields-kitchen").hidden = mode !== "kitchen";
+    $("fields-wardrobe").hidden = mode !== "wardrobe";
+    renderMats(); calc();
+  }
+
+  $("mode-kitchen").addEventListener("click", function () { setMode("kitchen"); });
+  $("mode-wardrobe").addEventListener("click", function () { setMode("wardrobe"); });
+  ["k-len", "k-h", "w-w", "w-h"].forEach(function (id) { $(id).addEventListener("input", calc); });
+
+  $("copy").addEventListener("click", function () {
+    var done = function () { $("copied").hidden = false; setTimeout(function () { $("copied").hidden = true; }, 2500); };
+    try {
+      navigator.clipboard.writeText("941433998").then(done, function () {
+        var r = document.createRange(); r.selectNodeContents($("phone"));
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      });
+    } catch (e) {
+      var r = document.createRange(); r.selectNodeContents($("phone"));
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    }
+  });
+
+  setMode("kitchen");
+})();
+</script>
+</body>
+</html>
